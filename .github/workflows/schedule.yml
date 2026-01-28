@@ -1,0 +1,45 @@
+name: Auto Run
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+concurrency:
+  group: aternos-bot
+  cancel-in-progress: false 
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install playwright requests
+          playwright install --with-deps chromium
+
+      - name: Connect VPN
+        uses: fscarmen/warp-on-actions@v1.1
+
+      - name: Fix DNS
+        run: |
+          sudo sed -i 's/nameserver.*/nameserver 8.8.8.8/' /etc/resolv.conf
+          echo "✓ DNS set to 8.8.8.8"
+
+      - name: Start Bot
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          CENTRAL_REPO: ${{ secrets.CENTRAL_REPO }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ATERNOS_USER: ${{ secrets.ATERNOS_USER }}
+          ATERNOS_PASS: ${{ secrets.ATERNOS_PASS }}
+        run: python3 bot.py
