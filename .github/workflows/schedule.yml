@@ -3,16 +3,18 @@ name: Auto Run
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
 
 concurrency:
   group: aternos-bot
-  cancel-in-progress: false 
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write
     
     steps:
       - uses: actions/checkout@v4
@@ -22,10 +24,24 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Pre-Check Server Status
+        id: precheck
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          STATUS=$(python status.py)
+          echo "Server is currently $STATUS"
+          if [ "$STATUS" = "ONLINE" ]; then
+            echo "Skipping bot run."
+            exit 1
+          fi
+
       - name: Install Dependencies
         run: |
           pip install playwright requests
           playwright install --with-deps chromium
+          sudo apt-get update && sudo apt-get install -y wireguard curl
 
       - name: Connect VPN
         uses: fscarmen/warp-on-actions@v1.1
@@ -42,4 +58,6 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           ATERNOS_USER: ${{ secrets.ATERNOS_USER }}
           ATERNOS_PASS: ${{ secrets.ATERNOS_PASS }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: python3 bot.py
