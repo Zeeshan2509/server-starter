@@ -111,7 +111,10 @@ def process_logs_filter():
                     formatted_time = dt.strftime("%d/%m/%y %I:%M %p")
                     status = action.capitalize()
 
-                    output_content.append(f"{symbol} [{formatted_time}] {name} {status}\n\n")
+                    log_entry = f"{symbol} [{formatted_time}] {name} {status}\n\n"
+                    
+                    if not output_content or output_content[-1] != log_entry:
+                        output_content.append(log_entry)
 
                     if action == "connected":
                         sessions[name] = dt
