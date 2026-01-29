@@ -30,28 +30,31 @@ jobs:
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          STATUS=$(python status.py)
-          echo "Server is currently $STATUS"
-          if [ "$STATUS" = "ONLINE" ]; then
-            echo "Skipping bot run."
-            exit 1
-          fi
+          # Capture the output of status.py
+          RESULT=$(python status.py)
+          echo "Server is $RESULT"
+          # Save result as a step output for other steps to see
+          echo "status=$RESULT" >> $GITHUB_OUTPUT
 
       - name: Install Dependencies
+        if: steps.precheck.outputs.status == 'OFFLINE'
         run: |
           pip install playwright requests
           playwright install --with-deps chromium
           sudo apt-get update && sudo apt-get install -y wireguard curl
 
       - name: Connect VPN
+        if: steps.precheck.outputs.status == 'OFFLINE'
         uses: fscarmen/warp-on-actions@v1.1
 
       - name: Fix DNS
+        if: steps.precheck.outputs.status == 'OFFLINE'
         run: |
           sudo sed -i 's/nameserver.*/nameserver 8.8.8.8/' /etc/resolv.conf
           echo "✓ DNS set to 8.8.8.8"
 
       - name: Start Bot
+        if: steps.precheck.outputs.status == 'OFFLINE'
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           CENTRAL_REPO: ${{ secrets.CENTRAL_REPO }}
