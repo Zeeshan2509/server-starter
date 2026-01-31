@@ -89,7 +89,7 @@ def process_logs_filter():
     log_pattern = re.compile(r"\[(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}):\d{2}.*?\]\s+Player\s+(connected|disconnected):\s+([^,]+)")
 
     symbols = {
-        "Shayan1509": "◆",
+        "Shayan1509": "★",
         "Zeeshan0908": "✦",
         "Ahmadmirza238": "⬧",
         "Zeeshan3702": "✧"
@@ -302,3 +302,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
