@@ -17,14 +17,14 @@ def check_bedrock():
         sock.sendto(ping_packet, (SERVER_IP, PORT))
         data, addr = sock.recvfrom(1024)
         if data:
-            return "ONLINE"
+            return "Online"
     except:
         pass
     finally:
         sock.close()
-    return "OFFLINE"
+    return "Offline"
 
 if __name__ == "__main__":
     result = check_bedrock()
-    print(result)
+    print("🟢 Server is Online. Stopping." if result == "Online" else "🔴 Server is Offline. Continuing...")
     sys.exit(0)
