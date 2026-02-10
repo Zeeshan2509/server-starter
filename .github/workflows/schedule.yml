@@ -43,7 +43,7 @@ jobs:
           SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
           RESULT=$(python status.py)
-          echo "Server is $RESULT"
+          echo "$RESULT"
           echo "status=$RESULT" >> $GITHUB_OUTPUT
 
       - name: Install Dependencies
