@@ -1,10 +1,10 @@
 name: Auto Run
 
 on:
+  repository_dispatch:
+    types: [trigger-from-cronjob]
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
-
+  
 concurrency:
   group: aternos-bot
   cancel-in-progress: false
