@@ -47,24 +47,24 @@ jobs:
           echo "status=$RESULT" >> $GITHUB_OUTPUT
 
       - name: Install Dependencies
-        if: steps.precheck.outputs.status == 'OFFLINE'
+        if: steps.precheck.outputs.status == '🔴 Server is Offline. Continuing...'
         run: |
           pip install playwright requests
           playwright install --with-deps chromium
           sudo apt-get update && sudo apt-get install -y wireguard curl
 
       - name: Connect VPN
-        if: steps.precheck.outputs.status == 'OFFLINE'
+        if: steps.precheck.outputs.status == '🔴 Server is Offline. Continuing...'
         uses: fscarmen/warp-on-actions@v1.1
 
       - name: Fix DNS
-        if: steps.precheck.outputs.status == 'OFFLINE'
+        if: steps.precheck.outputs.status == '🔴 Server is Offline. Continuing...'
         run: |
           sudo sed -i 's/nameserver.*/nameserver 8.8.8.8/' /etc/resolv.conf
           echo "✓ DNS set to 8.8.8.8"
 
       - name: Start Bot
-        if: steps.precheck.outputs.status == 'OFFLINE'
+        if: steps.precheck.outputs.status == '🔴 Server is Offline. Continuing...'
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           CENTRAL_REPO: ${{ secrets.CENTRAL_REPO }}
