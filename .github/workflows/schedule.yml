@@ -7,7 +7,7 @@ on:
   
 concurrency:
   group: aternos-bot
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run-bot:
@@ -15,9 +15,21 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+      actions: read
     
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check if already running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT=$(gh run list --workflow "${{ github.workflow }}" --status in_progress --json databaseId | jq '. | length')
+          
+          if [ "$COUNT" -gt 1 ]; then
+            echo "Bot is already running. Stopping."
+            exit 0 # This finishes the job as "Success" in 2 seconds
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -30,10 +42,8 @@ jobs:
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          # Capture the output of status.py
           RESULT=$(python status.py)
           echo "Server is $RESULT"
-          # Save result as a step output for other steps to see
           echo "status=$RESULT" >> $GITHUB_OUTPUT
 
       - name: Install Dependencies
