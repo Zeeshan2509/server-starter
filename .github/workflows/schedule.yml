@@ -2,7 +2,7 @@ name: Auto Run
 
 on:
   repository_dispatch:
-    types: [trigger-from-cronjob]
+    types: [Cron-Job]
   workflow_dispatch:
   
 concurrency:
