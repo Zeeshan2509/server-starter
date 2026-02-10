@@ -4,10 +4,6 @@ on:
   repository_dispatch:
     types: [Cron-Job]
   workflow_dispatch:
-  
-concurrency:
-  group: aternos-bot
-  cancel-in-progress: false
 
 jobs:
   run-bot:
