@@ -28,7 +28,7 @@ jobs:
           
           if [ "$COUNT" -gt 1 ]; then
             echo "Bot is already running. Stopping."
-            exit 0 # This finishes the job as "Success" in 2 seconds
+            exit 0 
           fi
 
       - name: Setup Python
