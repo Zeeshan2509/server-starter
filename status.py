@@ -11,10 +11,12 @@ def check_bedrock():
     ping_packet.extend(struct.pack('>q', 0))
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3.0) 
+    sock.settimeout(4.0)
     
     try:
-        sock.sendto(ping_packet, (SERVER_IP, PORT))
+        for _ in range(5):
+            sock.sendto(ping_packet, (SERVER_IP, PORT))
+        
         data, addr = sock.recvfrom(1024)
         if data:
             return "Online"
