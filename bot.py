@@ -200,8 +200,8 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
 
         # 2. PATIENT Stuck Offline Logic (Wait 60s before panic refresh)
         if status == "offline" and start_clicked:
-            if time.time() - start_time > 60:
-                print("Stuck Offline for 60s. Refreshing...")
+            if time.time() - start_time > 20:
+                print("Stuck Offline for 20s. Refreshing...")
                 page.reload(wait_until="domcontentloaded", timeout=0)
                 page.wait_for_timeout(5000)
                 notif_handled, start_clicked = False, False
@@ -312,3 +312,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
