@@ -73,7 +73,8 @@ def sync_logs_to_storage():
             content = base64.b64encode(f.read()).decode("utf-8")
 
         repo_orig = os.getenv('GITHUB_REPOSITORY', 'Bot').split('/')[-1]
-        data = {"message": f"Add {filename} from {repo_orig}", "content": content}
+        # UPDATED: Commit message now says 'Locally'
+        data = {"message": f"Add {filename} Locally", "content": content}
 
         r = requests.put(url, json=data, headers=HEADERS)
         if r.status_code in [200, 201]:
@@ -176,6 +177,7 @@ def get_server_status(page):
 def wait_for_online(page, start_already_clicked=False, log_pending=False):
     print("Monitoring progress...")
     last_printed_state, queue_printed = "", False
+    # Timer initialization
     start_time = time.time()
     notif_handled, start_clicked = False, start_already_clicked
 
@@ -193,15 +195,21 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                     save_logs_action(page)
                     log_pending = True
                     start_already_clicked = True
+                
                 start_btn.click()
                 print("✓ Start button clicked.")
                 start_clicked = True
-                start_time = time.time() # Reset clock once clicked
+                # SYNC FIX: Reset the timer ONLY after the click is physically done
+                start_time = time.time() 
+                # Give Aternos 5 seconds to process the click before we check status again
+                time.sleep(5) 
+                continue
 
-        # 2. PATIENT Stuck Offline Logic (Wait 60s before panic refresh)
+        # 2. PATIENT Stuck Offline Logic (Wait 60s for slow UI updates)
         if status == "offline" and start_clicked:
-            if time.time() - start_time > 20:
-                print("Stuck Offline for 20s. Refreshing...")
+            elapsed = time.time() - start_time
+            if elapsed > 60:
+                print(f"Stuck Offline for {int(elapsed)}s. Refreshing...")
                 page.reload(wait_until="domcontentloaded", timeout=0)
                 page.wait_for_timeout(5000)
                 notif_handled, start_clicked = False, False
@@ -224,25 +232,23 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
 
         # 4. Queue Handling
         if "queue" in status:
-            start_time = time.time() # Don't refresh page while in queue
+            start_time = time.time() # Reset timer while in queue to prevent refresh
             if not queue_printed:
                 try:
                     q_time = page.locator(QUEUE_TIME_SELECTOR).inner_text().strip()
                     if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
                 except: pass
 
-        # 5. Confirm Button Debounce (Stop multiple clicks)
+        # 5. Confirm Button Debounce
         confirm = page.locator(CONFIRM_BUTTON_SELECTOR)
         if confirm.is_visible() and confirm.is_enabled():
             confirm.click(force=True)
             print("✓ Confirm button clicked.")
             try:
-                # Wait for the button to disappear or status to change before looping
                 confirm.wait_for(state="hidden", timeout=15000)
-            except:
-                pass
+            except: pass
 
-        time.sleep(4) # Slower loop to let Aternos UI update
+        time.sleep(4)
 
 def main():
     with sync_playwright() as p:
@@ -297,6 +303,7 @@ def main():
                 if "offline" in status:
                     print("🔴 Server Offline. Starting...")
                     page.locator(START_BUTTON_SELECTOR).click()
+                    # Start monitoring, tell it we ALREADY clicked the button
                     wait_for_online(page, start_already_clicked=True, log_pending=True)
                 elif "queue" in status:
                     print("🟡 Server in Queue. Waiting for confirm...")
@@ -312,4 +319,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
