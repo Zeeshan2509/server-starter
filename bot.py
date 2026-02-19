@@ -105,7 +105,7 @@ def process_logs_filter():
                 if match:
                     date_val, time_val, action, name = match.groups()
                     name = name.strip()
-                    symbol = symbols.get(name, "•") # Default bullet if name is unknown
+                    symbol = symbols.get(name, "•")
 
                     dt = datetime.strptime(f"{date_val} {time_val}", "%Y-%m-%d %H:%M")
                     formatted_time = dt.strftime("%d/%m/%y %I:%M %p")
@@ -131,10 +131,8 @@ def process_logs_filter():
         final_file_data.append("Total Connection Time\n\n")
         for player, seconds in total_seconds.items():
             h, m = int(seconds // 3600), int((seconds % 3600) // 60)
-            
             h_label = "hour" if h == 1 else "hours"
             m_label = "minute" if m == 1 else "minutes"
-            
             final_file_data.append(f"{player}: {h} {h_label} {m} {m_label}\n")
 
         final_file_data.append("\n---\n\n")
@@ -187,6 +185,7 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
 
         status = get_server_status(page)
 
+        # 1. Start Button Logic
         if "offline" in status and not start_clicked:
             start_btn = page.locator(START_BUTTON_SELECTOR)
             if start_btn.is_visible() and start_btn.is_enabled():
@@ -196,13 +195,15 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                     start_already_clicked = True
                 start_btn.click()
                 print("✓ Start button clicked.")
-                start_clicked, start_time = True, time.time()
+                start_clicked = True
+                start_time = time.time() # Reset clock once clicked
 
-        if "offline" in status and start_clicked:
-            if time.time() - start_time > 30:
-                print("Stuck Offline for 30s. Refreshing...")
+        # 2. PATIENT Stuck Offline Logic (Wait 60s before panic refresh)
+        if status == "offline" and start_clicked:
+            if time.time() - start_time > 60:
+                print("Stuck Offline for 60s. Refreshing...")
                 page.reload(wait_until="domcontentloaded", timeout=0)
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(5000)
                 notif_handled, start_clicked = False, False
                 start_time = time.time()
 
@@ -212,7 +213,8 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                 sync_logs_to_storage()
             break
 
-        if status != last_printed_state:
+        # 3. Clean Status Changes
+        if status != last_printed_state and status != "unknown":
             if "preparing" in status: print("🟠 Status: Preparing...")
             elif "loading" in status: print("🟠 Status: Loading...")
             elif "starting" in status: print("🟢 Status: Starting...")
@@ -220,19 +222,27 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
             elif "saving" in status: print("🔴 Status: Saving...")
             last_printed_state = status
 
-        if "queue" in status and not queue_printed:
-            try:
-                q_time = page.locator(QUEUE_TIME_SELECTOR).inner_text().strip()
-                if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
-            except: pass
+        # 4. Queue Handling
+        if "queue" in status:
+            start_time = time.time() # Don't refresh page while in queue
+            if not queue_printed:
+                try:
+                    q_time = page.locator(QUEUE_TIME_SELECTOR).inner_text().strip()
+                    if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
+                except: pass
 
+        # 5. Confirm Button Debounce (Stop multiple clicks)
         confirm = page.locator(CONFIRM_BUTTON_SELECTOR)
         if confirm.is_visible() and confirm.is_enabled():
             confirm.click(force=True)
             print("✓ Confirm button clicked.")
-            page.wait_for_timeout(5000)
+            try:
+                # Wait for the button to disappear or status to change before looping
+                confirm.wait_for(state="hidden", timeout=15000)
+            except:
+                pass
 
-        time.sleep(3)
+        time.sleep(4) # Slower loop to let Aternos UI update
 
 def main():
     with sync_playwright() as p:
@@ -302,5 +312,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
