@@ -7,7 +7,7 @@ import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (PULLED FROM GITHUB SECRETS) ---
 GITHUB_TOKEN = os.environ.get('GH_PAT')
 CENTRAL_REPO = os.environ.get('CENTRAL_REPO')
 WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK')
@@ -25,7 +25,7 @@ QUEUE_TIME_SELECTOR = "div.server-status-label-left.queue-time"
 LOG_URL = "https://aternos.org/log/"
 LOG_CONTENT_SELECTOR = "div.page-content.page-log"
 
-# --- Credentials ---
+# --- Credentials (PULLED FROM GITHUB SECRETS) ---
 USERNAME = os.environ.get('ATERNOS_USER')
 PASSWORD = os.environ.get('ATERNOS_PASS')
 
@@ -72,7 +72,6 @@ def sync_logs_to_storage():
         with open(file_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
 
-        # Commit message marks as 'Locally'
         data = {"message": f"Add {filename} Locally", "content": content}
 
         r = requests.put(url, json=data, headers=HEADERS)
@@ -127,7 +126,6 @@ def process_logs_filter():
         final_file_data = ["Total Connection Time\n\n"]
         for player, seconds in total_seconds.items():
             h, m = int(seconds // 3600), int((seconds % 3600) // 60)
-            # Singular/Plural logic
             h_label = "hour" if h == 1 else "hours"
             m_label = "minute" if m == 1 else "minutes"
             final_file_data.append(f"{player}: {h} {h_label} {m} {m_label}\n")
@@ -179,7 +177,8 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
     last_printed_state, queue_printed = "", False
     start_time = time.time()
     notif_handled, start_clicked = False, start_already_clicked
-    logs_processed_this_run = log_pending
+    # Logic Fix: This variable tracks if we have attempted a log save this run
+    logs_attempted_this_run = log_pending 
 
     while True:
         if not notif_handled:
@@ -187,24 +186,27 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
 
         status = get_server_status(page)
 
+        # 1. Start Button Logic
         if "offline" in status and not start_clicked:
             start_btn = page.locator(START_BUTTON_SELECTOR)
             if start_btn.is_visible() and start_btn.is_enabled():
-                if not logs_processed_this_run:
+                # Only go to the log page if we haven't already tried to save them in this session
+                if not logs_attempted_this_run:
                     log_pending = save_logs_action(page)
-                    logs_processed_this_run = True
-                    start_already_clicked = True
+                    logs_attempted_this_run = True # Prevents second trip even after refresh
                 
-                start_btn.click()
+                # Robust click
+                start_btn.click(force=True)
                 print("✓ Start button clicked.")
                 start_clicked = True
-                start_time = time.time() 
-                time.sleep(5) 
+                start_time = time.time() # Reset clock now that button is pressed
+                time.sleep(7) # Give Aternos time to transition status
                 continue
 
+        # 2. Stuck Offline Logic (Reduced to 30s)
         if status == "offline" and start_clicked:
             elapsed = time.time() - start_time
-            if elapsed > 60:
+            if elapsed > 30:
                 print(f"Stuck Offline for {int(elapsed)}s. Refreshing...")
                 page.reload(wait_until="domcontentloaded", timeout=0)
                 page.wait_for_timeout(5000)
@@ -217,6 +219,7 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                 sync_logs_to_storage()
             break 
 
+        # 3. Clean Status Changes
         if status != last_printed_state and status != "unknown":
             if "preparing" in status: print("🟠 Status: Preparing...")
             elif "loading" in status: print("🟠 Status: Loading...")
@@ -225,6 +228,7 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
             elif "saving" in status: print("🔴 Status: Saving...")
             last_printed_state = status
 
+        # 4. Queue Handling
         if "queue" in status:
             start_time = time.time() 
             if not queue_printed:
@@ -233,6 +237,7 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                     if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
                 except: pass
 
+        # 5. Confirm Button Debounce
         confirm = page.locator(CONFIRM_BUTTON_SELECTOR)
         if confirm.is_visible() and confirm.is_enabled():
             confirm.click(force=True)
@@ -288,20 +293,13 @@ def main():
                 print(f"Server is {status.upper()}. Waiting for 'Offline' to process logs...")
                 wait_for_online(page, start_already_clicked=False, log_pending=False)
             else:
-                has_activity = save_logs_action(page)
-                status = get_server_status(page)
-                if "offline" in status:
-                    print("🔴 Server Offline. Starting...")
-                    page.locator(START_BUTTON_SELECTOR).click()
-                    wait_for_online(page, start_already_clicked=True, log_pending=has_activity)
-                else:
-                    wait_for_online(page, start_already_clicked=False, log_pending=has_activity)
+                # If we start here, logs are not yet processed
+                wait_for_online(page, start_already_clicked=False, log_pending=False)
 
         except Exception as e:
             print(f"Critical Error: {e}")
         finally:
-            print("Bot shutting down.")
-            browser.close()
+            print("Bot shutting down."); browser.close()
 
 if __name__ == "__main__":
     main()
