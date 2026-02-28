@@ -7,7 +7,7 @@ import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError
 
-# --- CONFIGURATION (PULLED FROM GITHUB SECRETS) ---
+# --- CONFIGURATION ---
 GITHUB_TOKEN = os.environ.get('GH_PAT')
 CENTRAL_REPO = os.environ.get('CENTRAL_REPO')
 WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK')
@@ -25,7 +25,7 @@ QUEUE_TIME_SELECTOR = "div.server-status-label-left.queue-time"
 LOG_URL = "https://aternos.org/log/"
 LOG_CONTENT_SELECTOR = "div.page-content.page-log"
 
-# --- Credentials (PULLED FROM GITHUB SECRETS) ---
+# --- Credentials ---
 USERNAME = os.environ.get('ATERNOS_USER')
 PASSWORD = os.environ.get('ATERNOS_PASS')
 
@@ -36,6 +36,7 @@ HEADERS = {
 }
 
 def sync_logs_to_storage():
+    """Numbers the log based on central repo count and uploads to Discord and GitHub."""
     if not os.path.exists("Server Logs.txt"):
         return
 
@@ -83,6 +84,7 @@ def sync_logs_to_storage():
         print(f"GitHub Storage error: {e}")
 
 def process_logs_filter():
+    """Filters logs with unique symbols, duplicate check, and total time at the top."""
     input_filename = 'Logs.txt'
     output_filename = 'Server Logs.txt'
     log_pattern = re.compile(r"\[(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}):\d{2}.*?\]\s+Player\s+(connected|disconnected):\s+([^,]+)")
@@ -157,14 +159,20 @@ def save_logs_action(page):
         page.goto("https://aternos.org/server/", wait_until="domcontentloaded", timeout=0)
 
 def handle_notifications(page):
+    """Handles notification prompts and EULA acceptance."""
     try:
+        # Check for 'No' button
         no_btn = page.get_by_role("button", name="No", exact=True)
         if no_btn.count() > 0 and no_btn.is_visible():
             no_btn.click()
             print("✓ Notification prompt handled.")
-            return True
+
+        # Check for EULA button based on text
+        eula_btn = page.get_by_role("button", name="Yes, I accept the EULA.", exact=False)
+        if eula_btn.count() > 0 and eula_btn.is_visible():
+            eula_btn.click()
+            print("✓ EULA accepted.")
     except: pass
-    return False
 
 def get_server_status(page):
     try:
@@ -177,8 +185,7 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
     last_printed_state, queue_printed = "", False
     start_time = time.time()
     notif_handled, start_clicked = False, start_already_clicked
-    # Logic Fix: This variable tracks if we have attempted a log save this run
-    logs_attempted_this_run = log_pending 
+    logs_attempted_this_run = log_pending
 
     while True:
         if not notif_handled:
@@ -186,24 +193,21 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
 
         status = get_server_status(page)
 
-        # 1. Start Button Logic
         if "offline" in status and not start_clicked:
             start_btn = page.locator(START_BUTTON_SELECTOR)
             if start_btn.is_visible() and start_btn.is_enabled():
-                # Only go to the log page if we haven't already tried to save them in this session
                 if not logs_attempted_this_run:
                     log_pending = save_logs_action(page)
-                    logs_attempted_this_run = True # Prevents second trip even after refresh
+                    logs_attempted_this_run = True 
+                    start_already_clicked = True
                 
-                # Robust click
                 start_btn.click(force=True)
                 print("✓ Start button clicked.")
                 start_clicked = True
-                start_time = time.time() # Reset clock now that button is pressed
-                time.sleep(7) # Give Aternos time to transition status
+                start_time = time.time()
+                time.sleep(7) 
                 continue
 
-        # 2. Stuck Offline Logic (Reduced to 30s)
         if status == "offline" and start_clicked:
             elapsed = time.time() - start_time
             if elapsed > 30:
@@ -219,7 +223,6 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                 sync_logs_to_storage()
             break 
 
-        # 3. Clean Status Changes
         if status != last_printed_state and status != "unknown":
             if "preparing" in status: print("🟠 Status: Preparing...")
             elif "loading" in status: print("🟠 Status: Loading...")
@@ -228,7 +231,6 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
             elif "saving" in status: print("🔴 Status: Saving...")
             last_printed_state = status
 
-        # 4. Queue Handling
         if "queue" in status:
             start_time = time.time() 
             if not queue_printed:
@@ -237,7 +239,6 @@ def wait_for_online(page, start_already_clicked=False, log_pending=False):
                     if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
                 except: pass
 
-        # 5. Confirm Button Debounce
         confirm = page.locator(CONFIRM_BUTTON_SELECTOR)
         if confirm.is_visible() and confirm.is_enabled():
             confirm.click(force=True)
@@ -293,7 +294,6 @@ def main():
                 print(f"Server is {status.upper()}. Waiting for 'Offline' to process logs...")
                 wait_for_online(page, start_already_clicked=False, log_pending=False)
             else:
-                # If we start here, logs are not yet processed
                 wait_for_online(page, start_already_clicked=False, log_pending=False)
 
         except Exception as e:
