@@ -7,7 +7,7 @@ import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (PULLED FROM GITHUB SECRETS) ---
 GITHUB_TOKEN = os.environ.get('GH_PAT')
 CENTRAL_REPO = os.environ.get('CENTRAL_REPO')
 WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK')
@@ -25,7 +25,7 @@ QUEUE_TIME_SELECTOR = "div.server-status-label-left.queue-time"
 LOG_URL = "https://aternos.org/log/"
 LOG_CONTENT_SELECTOR = "div.page-content.page-log"
 
-# --- Credentials ---
+# --- Credentials (PULLED FROM GITHUB SECRETS) ---
 USERNAME = os.environ.get('ATERNOS_USER')
 PASSWORD = os.environ.get('ATERNOS_PASS')
 
@@ -159,19 +159,20 @@ def save_logs_action(page):
         page.goto("https://aternos.org/server/", wait_until="domcontentloaded", timeout=0)
 
 def handle_notifications(page):
-    """Handles notification prompts and EULA acceptance."""
+    """Priority-based notification and EULA handler."""
     try:
-        # Check for 'No' button
-        no_btn = page.get_by_role("button", name="No", exact=True)
-        if no_btn.count() > 0 and no_btn.is_visible():
-            no_btn.click()
-            print("✓ Notification prompt handled.")
-
-        # Check for EULA button based on text
+        # Priority 1: EULA Acceptance
         eula_btn = page.get_by_role("button", name="Yes, I accept the EULA.", exact=False)
         if eula_btn.count() > 0 and eula_btn.is_visible():
             eula_btn.click()
             print("✓ EULA accepted.")
+            return
+
+        # Priority 2: Generic 'No' Button
+        no_btn = page.get_by_role("button", name="No", exact=True)
+        if no_btn.count() > 0 and no_btn.is_visible():
+            no_btn.click()
+            print("✓ Notification prompt handled.")
     except: pass
 
 def get_server_status(page):
