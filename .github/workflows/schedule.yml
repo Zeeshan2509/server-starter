@@ -22,25 +22,28 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Dependencies
+        run: |
+          pip install playwright==1.42.0 requests
+                    
       - name: Restore Cache
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-v1 
+          key: ${{ runner.os }}-playwright-v1.42.0
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install Dependencies
+      - name: Install Playwright Browsers
         run: |
-          pip install playwright requests
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != 'true' ]; then
             playwright install --with-deps chromium
           else
             playwright install-deps chromium
           fi
           sudo apt-get update && sudo apt-get install -y wireguard curl
-
+          
       - name: Connect VPN
         uses: fscarmen/warp-on-actions@v1.1
 
