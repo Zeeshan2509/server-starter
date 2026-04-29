@@ -22,21 +22,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Get Playwright Version
+        id: pw-version
         run: |
-          pip install playwright==1.42.0 requests
-                    
+          pip install --upgrade pip
+          # Fetch the latest version number from PyPI without installing
+          LATEST_PW=$(curl -s https://pypi.org/pypi/playwright/json | jq -r .info.version)
+          echo "version=$LATEST_PW" >> $GITHUB_OUTPUT
+
       - name: Restore Cache
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-v1.42.0
+          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.version }}
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install Playwright Browsers
+      - name: Install Dependencies
         run: |
+          pip install playwright==${{ steps.pw-version.outputs.version }} requests
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != 'true' ]; then
             playwright install --with-deps chromium
           else
