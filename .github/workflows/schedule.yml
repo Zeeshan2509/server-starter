@@ -26,7 +26,6 @@ jobs:
         id: pw-version
         run: |
           pip install --upgrade pip
-          # Fetch the latest version number from PyPI without installing
           LATEST_PW=$(curl -s https://pypi.org/pypi/playwright/json | jq -r .info.version)
           echo "version=$LATEST_PW" >> $GITHUB_OUTPUT
 
