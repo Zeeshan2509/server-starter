@@ -93,7 +93,8 @@ def process_logs_filter():
         "Shayan1509": "✷",
         "Zeeshan0908": "✦",
         "Ahmadmirza238": "⬧",
-        "Zeeshan3702": "✧"
+        "Zeeshan3702": "✧",
+        "nightmare25505": "★"
     }
 
     sessions, total_seconds, output_content = {}, {}, []
