@@ -267,16 +267,23 @@ def main():
             page.set_default_timeout(0)
             try:
                 page.goto("https://aternos.org/go/", wait_until="domcontentloaded", timeout=60000)
-                page.fill(USERNAME_SELECTOR, USERNAME); page.fill(PASSWORD_SELECTOR, PASSWORD)
-                page.click(LOGIN_BUTTON_SELECTOR)
+                if not USERNAME or not PASSWORD:
+                    raise ValueError("Missing ATERNOS_USER or ATERNOS_PASS environment variables.")
+                
+                # Use .first to avoid strict mode errors if new buttons added multiple matching selectors
+                page.locator(USERNAME_SELECTOR).first.fill(USERNAME)
+                page.locator(PASSWORD_SELECTOR).first.fill(PASSWORD)
+                page.locator(LOGIN_BUTTON_SELECTOR).first.click()
+                
                 page.wait_for_selector(SERVER_SELECTOR, state="visible", timeout=60000)
                 page.click(SERVER_SELECTOR)
                 page.wait_for_selector(STATUS_LABEL_SELECTOR, state="attached", timeout=30000)
                 break
             except Exception as e:
                 fail_count += 1
+                page.screenshot(path=f"login_fail_attempt_{fail_count}.png")
+                print(f"Stuck at login. Resetting tab (Attempt {fail_count}/3). Error: {e}")
                 page.close()
-                print(f"Stuck at login. Resetting tab (Attempt {fail_count}/3)...")
                 if fail_count >= 3:
                     print("Failed 3 times. Shutting down."); browser.close(); return
 
