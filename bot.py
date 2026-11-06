@@ -13,17 +13,17 @@ CENTRAL_REPO = os.environ.get('CENTRAL_REPO')
 WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK')
 
 # --- Selectors ---
-USERNAME_SELECTOR = ".username"
-PASSWORD_SELECTOR = ".password"
-LOGIN_BUTTON_SELECTOR = ".login-button"
-SERVER_SELECTOR = ".server-body"
-START_BUTTON_SELECTOR = "button#start"
-STOP_BUTTON_SELECTOR = "button#stop"
-CONFIRM_BUTTON_SELECTOR = "button#confirm"
-STATUS_LABEL_SELECTOR = "span.statuslabel-label"
-QUEUE_TIME_SELECTOR = "div.server-status-label-left.queue-time"
+USERNAME_SELECTOR = "input.username, input[autocomplete='username'], input[placeholder='Username'], input[name='user']"
+PASSWORD_SELECTOR = "input.password, input[autocomplete='current-password'], input[type='password'], input[name='password']"
+LOGIN_BUTTON_SELECTOR = ".login-button, button[type='submit'], #login"
+SERVER_SELECTOR = ".servercard, .server-body"
+START_BUTTON_SELECTOR = "button#start, #start, .server-start"
+STOP_BUTTON_SELECTOR = "button#stop, #stop"
+CONFIRM_BUTTON_SELECTOR = "button#confirm, #confirm, .btn-confirm"
+STATUS_LABEL_SELECTOR = "span.statuslabel-label, .statuslabel-label"
+QUEUE_TIME_SELECTOR = "div.server-status-label-left.queue-time, .queue-time"
 LOG_URL = "https://aternos.org/log/"
-LOG_CONTENT_SELECTOR = "div.page-content.page-log"
+LOG_CONTENT_SELECTOR = "div.page-content.page-log, .page-log, .log-body"
 
 # --- Credentials (PULLED FROM GITHUB SECRETS) ---
 USERNAME = os.environ.get('ATERNOS_USER')
@@ -35,16 +35,72 @@ HEADERS = {
     "Accept": "application/vnd.github.v3+json"
 }
 
+
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def handle_adblock_and_vignettes(page):
+    """Dismisses Google Vignettes (#google_vignette), CMP consent, and Aternos popups."""
+    # 1. URL hash check
+    try:
+        if "google_vignette" in page.url:
+            clean_url = page.url.split("#")[0]
+            page.goto(clean_url, wait_until="domcontentloaded", timeout=15000)
+            page.wait_for_timeout(1000)
+    except Exception:
+        pass
+
+    # 2. Frame dismiss buttons
+    try:
+        for frame in page.frames:
+            try:
+                dismiss_btn = frame.locator("#dismiss-button, div[id='dismiss-button'], div[aria-label='Close ad']")
+                if dismiss_btn.count() > 0 and dismiss_btn.first.is_visible():
+                    dismiss_btn.first.click(force=True, timeout=2000)
+                    page.wait_for_timeout(500)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 3. DOM popup dismiss buttons
+    try:
+        page.evaluate("""() => {
+            const selectors = [
+                'button:has-text("Continue")',
+                '.btn-continue',
+                '.adblock-continue',
+                'button:has-text("Okay")',
+                '.alert-okay',
+                '.btn-okay',
+                '.btn-primary:has-text("Continue")',
+                '#dismiss-button',
+                '.fc-button.fc-cta-consent'
+            ];
+            for (const sel of selectors) {
+                try {
+                    const el = document.querySelector(sel);
+                    if (el && el.offsetParent !== null) {
+                        el.click();
+                    }
+                } catch(e) {}
+            }
+        }""")
+    except Exception:
+        pass
+
+
 def sync_logs_to_storage():
     """Numbers the log based on central repo count and uploads to Discord and GitHub."""
     if not os.path.exists("Server Logs.txt"):
         return
 
-    print("Starting upload sequence...")
+    log("Starting log upload sequence...")
 
     try:
         url = f"https://api.github.com/repos/{CENTRAL_REPO}/contents/Logs"
-        r = requests.get(url, headers=HEADERS)
+        r = requests.get(url, headers=HEADERS, timeout=15)
         if r.status_code == 200:
             files = r.json()
             count = len([f for f in files if f['name'].startswith('Server Logs') and f['name'].endswith('.txt')])
@@ -52,7 +108,7 @@ def sync_logs_to_storage():
         else:
             num = 1
     except Exception as e:
-        print(f"⚠ Numbering error: {e}. Using timestamp failsafe.")
+        log(f"⚠ Numbering error: {e}. Using timestamp failsafe.")
         num = datetime.now().strftime("%H%M")
 
     clean_name = f"Server Logs {num}"
@@ -63,10 +119,10 @@ def sync_logs_to_storage():
         with open(file_path, 'rb') as f:
             payload = {"content": f"**{clean_name}**"}
             files = {'file': (filename, f)}
-            requests.post(WEBHOOK_URL, data=payload, files=files)
-        print(f"✓ Uploaded to Discord: {filename}")
+            requests.post(WEBHOOK_URL, data=payload, files=files, timeout=15)
+        log(f"✓ Uploaded to Discord: {filename}")
     except Exception as e:
-        print(f"Discord error: {e}")
+        log(f"Discord error: {e}")
 
     try:
         url = f"https://api.github.com/repos/{CENTRAL_REPO}/contents/Logs/{filename}"
@@ -75,13 +131,14 @@ def sync_logs_to_storage():
 
         data = {"message": f"Add {filename} Locally", "content": content}
 
-        r = requests.put(url, json=data, headers=HEADERS)
+        r = requests.put(url, json=data, headers=HEADERS, timeout=20)
         if r.status_code in [200, 201]:
-            print(f"✓ Saved to central-storage: {filename}")
+            log(f"✓ Saved to central-storage: {filename}")
         else:
-            print(f"❌ GitHub Storage failed: {r.text}")
+            log(f"❌ GitHub Storage failed: {r.text}")
     except Exception as e:
-        print(f"GitHub Storage error: {e}")
+        log(f"GitHub Storage error: {e}")
+
 
 def process_logs_filter():
     """Filters logs with unique symbols, duplicate check, and total time at the top."""
@@ -102,7 +159,8 @@ def process_logs_filter():
     try:
         with open(input_filename, 'r', encoding="utf-8") as f:
             for line in f:
-                if "Player connected: Bot" in line or "Player disconnected: Bot" in line: continue
+                if "Player connected: Bot" in line or "Player disconnected: Bot" in line:
+                    continue
                 match = log_pattern.search(line)
                 if match:
                     date_val, time_val, action, name = match.groups()
@@ -123,7 +181,7 @@ def process_logs_filter():
                         del sessions[name]
 
         if not output_content:
-            print("No player activity found. Skipping file creation.")
+            log("No player activity found. Skipping file creation.")
             return False
 
         final_file_data = ["Total Connection Time\n\n"]
@@ -137,178 +195,270 @@ def process_logs_filter():
 
         with open(output_filename, 'w', encoding="utf-8") as out_file:
             out_file.writelines(final_file_data)
-        print("✓ Filtration Success: Results saved to 'Server Logs.txt'")
+        log("✓ Filtration Success: Results saved to 'Server Logs.txt'")
         return True
     except FileNotFoundError:
-        print("Error: Could not find 'Logs.txt'")
+        log("Error: Could not find 'Logs.txt'")
         return False
 
+
 def save_logs_action(page):
-    print("Navigating to Logs...")
+    """Saves prior session logs with a strict timeout so it never hangs server startup."""
+    log("Navigating to Logs to archive prior session...")
     fresh_log_url = f"{LOG_URL}?t={int(time.time())}"
-    page.goto(fresh_log_url, wait_until="domcontentloaded", timeout=0)
     try:
-        page.wait_for_timeout(3000)
-        page.wait_for_selector(LOG_CONTENT_SELECTOR, timeout=0)
-        log_text = page.locator(LOG_CONTENT_SELECTOR).inner_text()
-        with open("Logs.txt", "w", encoding="utf-8") as f: f.write(log_text)
+        page.goto(fresh_log_url, wait_until="domcontentloaded", timeout=15000)
+        handle_adblock_and_vignettes(page)
+        page.wait_for_timeout(2000)
+        page.wait_for_selector(LOG_CONTENT_SELECTOR, timeout=10000)
+        log_text = page.locator(LOG_CONTENT_SELECTOR).first.inner_text()
+        with open("Logs.txt", "w", encoding="utf-8") as f:
+            f.write(log_text)
         return process_logs_filter()
     except Exception as e:
-        print(f"Failed to save logs: {e}")
+        log(f"Notice: Could not archive prior logs ({e}). Proceeding with server start.")
         return False
     finally:
-        page.goto("https://aternos.org/server/", wait_until="domcontentloaded", timeout=0)
+        try:
+            page.goto("https://aternos.org/server/", wait_until="domcontentloaded", timeout=20000)
+            handle_adblock_and_vignettes(page)
+        except Exception:
+            pass
+
 
 def handle_notifications(page):
     """Priority-based notification and EULA handler."""
     try:
         # Priority 1: EULA Acceptance
         eula_btn = page.get_by_role("button", name="Yes, I accept the EULA.", exact=False)
-        if eula_btn.count() > 0 and eula_btn.is_visible():
-            eula_btn.click()
-            print("✓ EULA accepted.")
-            return
+        if eula_btn.count() > 0 and eula_btn.first.is_visible():
+            eula_btn.first.click()
+            log("✓ EULA accepted.")
+            return True
 
         # Priority 2: Generic 'No' Button
         no_btn = page.get_by_role("button", name="No", exact=True)
-        if no_btn.count() > 0 and no_btn.is_visible():
-            no_btn.click()
-            print("✓ Notification prompt handled.")
-    except: pass
+        if no_btn.count() > 0 and no_btn.first.is_visible():
+            no_btn.first.click()
+            log("✓ Notification prompt handled.")
+            return True
+    except Exception:
+        pass
+    return False
+
 
 def get_server_status(page):
     try:
-        return page.locator(STATUS_LABEL_SELECTOR).inner_text().strip().lower()
-    except:
+        return page.locator(STATUS_LABEL_SELECTOR).first.inner_text().strip().lower()
+    except Exception:
         return "unknown"
 
-def wait_for_online(page, start_already_clicked=False, log_pending=False):
-    print("Monitoring progress...")
-    last_printed_state, queue_printed = "", False
-    start_time = time.time()
-    notif_handled, start_clicked = False, start_already_clicked
-    logs_attempted_this_run = log_pending
 
-    while True:
+def wait_for_online(page, start_already_clicked=False, log_pending=False):
+    log("Monitoring progress...")
+    last_printed_state = ""
+    queue_printed = False
+    overall_start_time = time.time()
+    start_time = time.time()
+    notif_handled = False
+    start_clicked = start_already_clicked
+    logs_attempted = log_pending
+
+    # Max 20 minutes wait
+    MAX_WAIT_SECONDS = 20 * 60
+
+    while time.time() - overall_start_time < MAX_WAIT_SECONDS:
+        handle_adblock_and_vignettes(page)
         if not notif_handled:
-            if handle_notifications(page): notif_handled = True
+            if handle_notifications(page):
+                notif_handled = True
 
         status = get_server_status(page)
 
+        # Offline state - Click Start!
         if "offline" in status and not start_clicked:
-            start_btn = page.locator(START_BUTTON_SELECTOR)
-            if start_btn.is_visible() and start_btn.is_enabled():
-                if not logs_attempted_this_run:
+            start_btn = page.locator(START_BUTTON_SELECTOR).first
+            if start_btn.count() > 0 and start_btn.is_visible() and start_btn.is_enabled():
+                if not logs_attempted:
+                    logs_attempted = True
                     log_pending = save_logs_action(page)
-                    logs_attempted_this_run = True 
-                    start_already_clicked = True
-                
+                    # Re-verify start button after returning from logs
+                    start_btn = page.locator(START_BUTTON_SELECTOR).first
+
+                log("Clicking Start button...")
+                handle_adblock_and_vignettes(page)
                 start_btn.click(force=True)
-                print("✓ Start button clicked.")
+                log("✓ Start button clicked.")
                 start_clicked = True
                 start_time = time.time()
-                time.sleep(7) 
+                time.sleep(5)
                 continue
 
-        if status == "offline" and start_clicked:
+        # If stuck in offline after clicking start for > 35s, refresh
+        if "offline" in status and start_clicked:
             elapsed = time.time() - start_time
-            if elapsed > 30:
-                print(f"Stuck Offline for {int(elapsed)}s. Refreshing...")
-                page.reload(wait_until="domcontentloaded", timeout=0)
-                page.wait_for_timeout(5000)
-                notif_handled, start_clicked = False, False
+            if elapsed > 35:
+                log(f"Stuck Offline for {int(elapsed)}s after clicking start. Refreshing...")
+                page.reload(wait_until="domcontentloaded", timeout=20000)
+                handle_adblock_and_vignettes(page)
+                page.wait_for_timeout(3000)
+                notif_handled = False
+                start_clicked = False
                 start_time = time.time()
 
         if "online" in status:
-            print("🟢 Server is now Online.")
+            log("🟢 Server is now Online!")
             if log_pending:
                 sync_logs_to_storage()
-            break 
+            return True
 
         if status != last_printed_state and status != "unknown":
-            if "preparing" in status: print("🟠 Status: Preparing...")
-            elif "loading" in status: print("🟠 Status: Loading...")
-            elif "starting" in status: print("🟢 Status: Starting...")
-            elif "stopping" in status: print("🔴 Status: Stopping...")
-            elif "saving" in status: print("🔴 Status: Saving...")
+            if "preparing" in status: log("🟠 Status: Preparing...")
+            elif "loading" in status: log("🟠 Status: Loading...")
+            elif "starting" in status: log("🟢 Status: Starting...")
+            elif "stopping" in status: log("🔴 Status: Stopping...")
+            elif "saving" in status: log("🔴 Status: Saving...")
+            else: log(f"Server status: {status}")
             last_printed_state = status
 
         if "queue" in status:
-            start_time = time.time() 
+            start_time = time.time()
             if not queue_printed:
                 try:
-                    q_time = page.locator(QUEUE_TIME_SELECTOR).inner_text().strip()
-                    if q_time: print(f"🟡 Queue Remaining: {q_time}"); queue_printed = True
-                except: pass
+                    q_time = page.locator(QUEUE_TIME_SELECTOR).first.inner_text().strip()
+                    if q_time:
+                        log(f"🟡 Queue Remaining: {q_time}")
+                        queue_printed = True
+                except Exception:
+                    pass
 
-        confirm = page.locator(CONFIRM_BUTTON_SELECTOR)
-        if confirm.is_visible() and confirm.is_enabled():
+        # Confirm queue popup if present
+        confirm = page.locator(CONFIRM_BUTTON_SELECTOR).first
+        if confirm.count() > 0 and confirm.is_visible() and confirm.is_enabled():
             confirm.click(force=True)
-            print("✓ Confirm button clicked.")
-            try: confirm.wait_for(state="hidden", timeout=15000)
-            except: pass
+            log("✓ Confirm button clicked.")
+            try:
+                confirm.wait_for(state="hidden", timeout=10000)
+            except Exception:
+                pass
 
         time.sleep(4)
 
+    log("Timeout waiting for server to reach online state.")
+    return False
+
+
+def login_and_select_server(page):
+    log("Navigating to Aternos...")
+    page.goto("https://aternos.org/go/", wait_until="domcontentloaded", timeout=45000)
+    handle_adblock_and_vignettes(page)
+
+    # 1. Already on server page?
+    if "/server" in page.url and "/servers" not in page.url:
+        log("Already on server dashboard.")
+        return True
+
+    # 2. Check if we need to log in
+    if "/servers" not in page.url and "/server" not in page.url:
+        if not USERNAME or not PASSWORD:
+            raise ValueError("Missing ATERNOS_USER or ATERNOS_PASS environment variables.")
+        
+        log("Filling login credentials...")
+        user_input = page.locator(USERNAME_SELECTOR).first
+        user_input.wait_for(state="visible", timeout=20000)
+        user_input.fill(USERNAME)
+        
+        pass_input = page.locator(PASSWORD_SELECTOR).first
+        pass_input.wait_for(state="visible", timeout=10000)
+        pass_input.fill(PASSWORD)
+        
+        login_btn = page.locator(LOGIN_BUTTON_SELECTOR).first
+        login_btn.wait_for(state="visible", timeout=10000)
+        login_btn.click()
+        handle_adblock_and_vignettes(page)
+        page.wait_for_timeout(3000)
+
+    # 3. Select Server
+    if "/server" not in page.url or "/servers" in page.url:
+        log("Selecting server card...")
+        handle_adblock_and_vignettes(page)
+        try:
+            card = page.locator(SERVER_SELECTOR).first
+            card.wait_for(state="visible", timeout=15000)
+            card.click(force=True)
+        except Exception as e:
+            log(f"Server card click note: {e}. Trying direct navigation to /server/...")
+            page.goto("https://aternos.org/server/", wait_until="domcontentloaded", timeout=30000)
+
+    handle_adblock_and_vignettes(page)
+    page.wait_for_selector(STATUS_LABEL_SELECTOR, state="attached", timeout=25000)
+    log(f"Successfully arrived on server dashboard: {page.url}")
+    return True
+
+
 def main():
+    log("Bot Started.")
     with sync_playwright() as p:
-        print("Bot Started.")
         browser = p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-blink-features=AutomationControlled'
+            ]
         )
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800}
         )
 
-        fail_count, page = 0, None
+        fail_count = 0
         while fail_count < 3:
             page = context.new_page()
-            page.set_default_timeout(0)
+            page.set_default_timeout(30000)
+            page.set_default_navigation_timeout(45000)
             try:
-                page.goto("https://aternos.org/go/", wait_until="domcontentloaded", timeout=60000)
-                if not USERNAME or not PASSWORD:
-                    raise ValueError("Missing ATERNOS_USER or ATERNOS_PASS environment variables.")
-                
-                # Use .first to avoid strict mode errors if new buttons added multiple matching selectors
-                page.locator(USERNAME_SELECTOR).first.fill(USERNAME)
-                page.locator(PASSWORD_SELECTOR).first.fill(PASSWORD)
-                page.locator(LOGIN_BUTTON_SELECTOR).first.click()
-                
-                page.wait_for_selector(SERVER_SELECTOR, state="visible", timeout=60000)
-                page.click(SERVER_SELECTOR)
-                page.wait_for_selector(STATUS_LABEL_SELECTOR, state="attached", timeout=30000)
+                login_and_select_server(page)
                 break
             except Exception as e:
                 fail_count += 1
-                page.screenshot(path=f"login_fail_attempt_{fail_count}.png")
-                print(f"Stuck at login. Resetting tab (Attempt {fail_count}/3). Error: {e}")
+                try:
+                    os.makedirs("./artifacts", exist_ok=True)
+                    page.screenshot(path=f"./artifacts/login_fail_attempt_{fail_count}.png")
+                except Exception:
+                    pass
+                log(f"Stuck at login/select. Attempt {fail_count}/3. Error: {e}")
                 page.close()
                 if fail_count >= 3:
-                    print("Failed 3 times. Shutting down."); browser.close(); return
+                    log("Failed 3 times. Shutting down.")
+                    browser.close()
+                    sys.exit(1)
 
         try:
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(2000)
             handle_notifications(page)
             status = get_server_status(page)
 
             if "online" in status:
-                print("🟢 Already Online. Closing bot.")
+                log("🟢 Already Online. Closing bot.")
                 return
 
             if "loading" in status or "starting" in status:
-                print("Server Loading. Skipping logs...")
+                log("Server is Loading/Starting. Skipping logs...")
                 wait_for_online(page, start_already_clicked=True, log_pending=False)
             elif any(x in status for x in ["stopping", "saving"]):
-                print(f"Server is {status.upper()}. Waiting for 'Offline' to process logs...")
+                log(f"Server is {status.upper()}. Waiting for 'Offline' to process logs...")
                 wait_for_online(page, start_already_clicked=False, log_pending=False)
             else:
                 wait_for_online(page, start_already_clicked=False, log_pending=False)
 
         except Exception as e:
-            print(f"Critical Error: {e}")
+            log(f"Critical Error: {e}")
         finally:
-            print("Bot shutting down."); browser.close()
+            log("Bot shutting down.")
+            browser.close()
+
 
 if __name__ == "__main__":
     main()

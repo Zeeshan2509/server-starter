@@ -40,13 +40,29 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          # Disable background unattended updates to avoid dpkg lock contention
+          sudo systemctl stop unattended-upgrades || true
+          sudo systemctl disable unattended-upgrades || true
+          
+          # Wait for any active apt/dpkg locks to release
+          while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; do
+            echo "Waiting for dpkg/apt lock..."
+            sleep 2
+          done
+
+          export DEBIAN_FRONTEND=noninteractive
+          export NEEDRESTART_MODE=a
+
           pip install playwright==${{ steps.pw-version.outputs.version }} requests
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != 'true' ]; then
             playwright install --with-deps chromium
           else
             playwright install-deps chromium
           fi
-          sudo apt-get update && sudo apt-get install -y wireguard curl
+
+          # Pre-install networking packages needed by warp-on-actions to prevent apt contention
+          sudo apt-get update && sudo -E apt-get install -y --no-install-recommends \
+            wireguard wireguard-tools curl net-tools iproute2 resolvconf dnsutils iptables
           
       - name: Connect VPN
         uses: fscarmen/warp-on-actions@v1.1
@@ -58,6 +74,7 @@ jobs:
 
       - name: Start Bot
         env:
+          PYTHONUNBUFFERED: "1"
           GH_PAT: ${{ secrets.GH_PAT }}
           CENTRAL_REPO: ${{ secrets.CENTRAL_REPO }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -66,3 +83,12 @@ jobs:
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: python3 bot.py
+
+      - name: Upload Artifacts (Screenshots on Failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-starter-screenshots
+          path: artifacts/
+          retention-days: 5
+          if-no-files-found: ignore
